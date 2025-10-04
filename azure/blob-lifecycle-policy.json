@@ -1,0 +1,183 @@
+{
+  "rules": [
+    {
+      "enabled": true,
+      "name": "move-to-cool-tier",
+      "type": "Lifecycle",
+      "definition": {
+        "actions": {
+          "baseBlob": {
+            "tierToCool": {
+              "daysAfterModificationGreaterThan": 30
+            }
+          }
+        },
+        "filters": {
+          "blobTypes": [
+            "blockBlob"
+          ],
+          "prefixMatch": [
+            "imagegen-images/"
+          ]
+        }
+      }
+    },
+    {
+      "enabled": true,
+      "name": "move-to-archive-tier",
+      "type": "Lifecycle",
+      "definition": {
+        "actions": {
+          "baseBlob": {
+            "tierToArchive": {
+              "daysAfterModificationGreaterThan": 90
+            }
+          }
+        },
+        "filters": {
+          "blobTypes": [
+            "blockBlob"
+          ],
+          "prefixMatch": [
+            "imagegen-images/"
+          ]
+        }
+      }
+    },
+    {
+      "enabled": true,
+      "name": "delete-old-images-free-tier",
+      "type": "Lifecycle",
+      "definition": {
+        "actions": {
+          "baseBlob": {
+            "delete": {
+              "daysAfterModificationGreaterThan": 90
+            }
+          }
+        },
+        "filters": {
+          "blobTypes": [
+            "blockBlob"
+          ],
+          "prefixMatch": [
+            "imagegen-images/"
+          ],
+          "blobIndexMatch": [
+            {
+              "name": "subscription_tier",
+              "op": "==",
+              "value": "free"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "enabled": true,
+      "name": "delete-old-images-basic-tier",
+      "type": "Lifecycle",
+      "definition": {
+        "actions": {
+          "baseBlob": {
+            "delete": {
+              "daysAfterModificationGreaterThan": 180
+            }
+          }
+        },
+        "filters": {
+          "blobTypes": [
+            "blockBlob"
+          ],
+          "prefixMatch": [
+            "imagegen-images/"
+          ],
+          "blobIndexMatch": [
+            {
+              "name": "subscription_tier",
+              "op": "==",
+              "value": "basic"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "enabled": true,
+      "name": "delete-old-images-pro-tier",
+      "type": "Lifecycle",
+      "definition": {
+        "actions": {
+          "baseBlob": {
+            "delete": {
+              "daysAfterModificationGreaterThan": 365
+            }
+          }
+        },
+        "filters": {
+          "blobTypes": [
+            "blockBlob"
+          ],
+          "prefixMatch": [
+            "imagegen-images/"
+          ],
+          "blobIndexMatch": [
+            {
+              "name": "subscription_tier",
+              "op": "==",
+              "value": "pro"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "enabled": true,
+      "name": "delete-thumbnails",
+      "type": "Lifecycle",
+      "definition": {
+        "actions": {
+          "baseBlob": {
+            "delete": {
+              "daysAfterModificationGreaterThan": 365
+            }
+          }
+        },
+        "filters": {
+          "blobTypes": [
+            "blockBlob"
+          ],
+          "prefixMatch": [
+            "imagegen-images/"
+          ],
+          "blobIndexMatch": [
+            {
+              "name": "is_thumbnail",
+              "op": "==",
+              "value": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "enabled": true,
+      "name": "delete-soft-deleted-blobs",
+      "type": "Lifecycle",
+      "definition": {
+        "actions": {
+          "baseBlob": {
+            "delete": {
+              "daysAfterModificationGreaterThan": 7
+            }
+          }
+        },
+        "filters": {
+          "blobTypes": [
+            "blockBlob"
+          ]
+        }
+      }
+    }
+  ]
+}

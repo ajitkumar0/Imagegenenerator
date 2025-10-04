@@ -1,0 +1,126 @@
+# Azure Container Apps Configuration for Background Worker
+# Deploy with: az containerapp create --yaml azure-container-app-worker.yaml
+
+properties:
+  managedEnvironmentId: /subscriptions/{subscription-id}/resourceGroups/imagegen-rg/providers/Microsoft.App/managedEnvironments/imagegen-env
+  configuration:
+    activeRevisionsMode: Single
+    secrets:
+      - name: replicate-api-token
+        value: ""  # Set via CLI or Key Vault reference
+    registries:
+      - server: imagegenacr.azurecr.io
+        username: ""  # Use Managed Identity
+        passwordSecretRef: ""  # Not needed with Managed Identity
+        identity: system  # Use system-assigned managed identity
+    ingress:
+      external: false  # Worker doesn't need external traffic
+      targetPort: 8080
+      transport: http
+  template:
+    revisionSuffix: worker-v1
+    containers:
+      - name: imagegen-worker
+        image: imagegenacr.azurecr.io/imagegen-worker:latest
+        resources:
+          cpu: 1.0
+          memory: 2Gi
+        env:
+          # Application Settings
+          - name: ENVIRONMENT
+            value: production
+          - name: DEBUG
+            value: "false"
+          - name: LOG_LEVEL
+            value: INFO
+
+          # Azure Cosmos DB (MongoDB API)
+          - name: MONGODB_CONNECTION_STRING_SECRET
+            value: mongodb-connection-string
+          - name: MONGODB_DATABASE_NAME
+            value: imagegenerator
+
+          # Azure Blob Storage
+          - name: AZURE_STORAGE_ACCOUNT_URL
+            value: https://imagegenstorage.blob.core.windows.net/
+          - name: BLOB_CONTAINER_NAME
+            value: imagegen-images
+
+          # Azure CDN
+          - name: AZURE_CDN_ENDPOINT_URL
+            value: https://imagegen-cdn.azureedge.net
+          - name: AZURE_CDN_PROFILE_NAME
+            value: imagegen-cdn-profile
+
+          # Azure Key Vault
+          - name: AZURE_KEY_VAULT_URL
+            value: https://imagegen-kv.vault.azure.net/
+
+          # Azure Service Bus
+          - name: AZURE_SERVICEBUS_NAMESPACE
+            value: imagegen-servicebus
+          - name: SERVICEBUS_QUEUE_NAME
+            value: image-generation-queue
+
+          # Application Insights
+          - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+            value: ""  # Set via CLI
+
+          # Replicate API
+          - name: REPLICATE_API_TOKEN
+            secretRef: replicate-api-token
+
+          # Azure Managed Identity
+          - name: MANAGED_IDENTITY_ENABLED
+            value: "true"
+
+          # Worker Settings
+          - name: WORKER_MAX_CONCURRENT_JOBS
+            value: "5"
+
+        probes:
+          - type: Liveness
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+
+          - type: Readiness
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+
+    scale:
+      minReplicas: 1
+      maxReplicas: 10
+      rules:
+        - name: queue-scaling-rule
+          custom:
+            type: azure-servicebus
+            metadata:
+              queueName: image-generation-queue
+              namespace: imagegen-servicebus
+              messageCount: "5"  # Scale up when >5 messages in queue
+            auth:
+              - secretRef: ""
+                triggerParameter: connection
+
+        - name: cpu-scaling-rule
+          custom:
+            type: cpu
+            metadata:
+              type: Utilization
+              value: "80"  # Scale up at 80% CPU
+
+  identity:
+    type: SystemAssigned
+
+  tags:
+    application: ImageGenerator
+    component: Worker
+    environment: Production

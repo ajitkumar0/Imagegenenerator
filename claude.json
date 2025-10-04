@@ -1,0 +1,139 @@
+{
+  "project": "ImageGen AI Frontend - Next.js Landing Page",
+  "deployment_target": "Azure Web App with Container Registry",
+  "issues_and_resolutions": [
+    {
+      "issue_number": 1,
+      "issue": "Docker build - exec format error",
+      "error_message": "exec /usr/local/bin/docker-entrypoint.sh: exec format error",
+      "root_cause": "Docker image was built for ARM64 (Mac M1) architecture but Azure requires linux/amd64",
+      "resolution": "Added --platform=linux/amd64 to Dockerfile and build commands",
+      "files_modified": [
+        "Dockerfile.simple",
+        "deploy-azure.sh",
+        "DEPLOYMENT.md"
+      ],
+      "fix_details": {
+        "dockerfile": "FROM --platform=linux/amd64 node:18-alpine",
+        "build_command": "docker buildx build --platform linux/amd64 -f Dockerfile.simple -t imagegenacr.azurecr.io/frontend:latest . --load"
+      },
+      "lesson_learned": "Always specify platform when building Docker images for cloud deployment from Mac M1/M2"
+    },
+    {
+      "issue_number": 2,
+      "issue": "PORT environment variable not expanded",
+      "error_message": "error: option '-p, --port <port>' argument missing",
+      "root_cause": "npm scripts don't expand shell variables like $PORT properly. The CMD in Dockerfile used ['npm', 'start'] which doesn't invoke a shell",
+      "resolution": "Changed Docker CMD to use shell form and added default PORT environment variable",
+      "files_modified": [
+        "Dockerfile.simple",
+        "package.json"
+      ],
+      "fix_details": {
+        "dockerfile_env": "ENV PORT=3000",
+        "dockerfile_cmd": "CMD [\"sh\", \"-c\", \"next start -p ${PORT}\"]",
+        "package_json": "\"start\": \"next start -p ${PORT:-3000}\""
+      },
+      "lesson_learned": "Azure Web Apps set PORT dynamically. Use shell form CMD with 'sh -c' to expand environment variables"
+    },
+    {
+      "issue_number": 3,
+      "issue": "Next.js command not found (exit code 127)",
+      "error_message": "Container has finished running with exit code: 127",
+      "root_cause": "The 'next' binary from node_modules/.bin was not in the container's PATH",
+      "resolution": "Added node_modules/.bin to PATH in Dockerfile",
+      "files_modified": [
+        "Dockerfile.simple"
+      ],
+      "fix_details": {
+        "dockerfile_path": "ENV PATH=/app/node_modules/.bin:$PATH"
+      },
+      "lesson_learned": "Always ensure node_modules/.bin is in PATH when running Node.js apps in containers"
+    },
+    {
+      "issue_number": 4,
+      "issue": "npm install timeouts on local machine",
+      "error_message": "Command timed out after 3m 0s",
+      "root_cause": "Network issues or slow npm registry causing installation to take too long",
+      "resolution": "Used Docker-based deployment instead, which handles npm install in container build process",
+      "files_modified": [
+        "Dockerfile.simple",
+        "docker-compose.simple.yml"
+      ],
+      "lesson_learned": "Docker builds are more reliable for deployments. Use multi-stage builds for faster iterations"
+    }
+  ],
+  "best_practices": [
+    {
+      "category": "Docker",
+      "practices": [
+        "Always specify --platform=linux/amd64 when building for Azure from Mac",
+        "Use shell form CMD ['sh', '-c', '...'] when needing environment variable expansion",
+        "Set PATH to include node_modules/.bin for Node.js applications",
+        "Use .dockerignore to exclude unnecessary files (node_modules, .git, .next)",
+        "Build with docker buildx for cross-platform compatibility"
+      ]
+    },
+    {
+      "category": "Azure Web App",
+      "practices": [
+        "Always set WEBSITES_PORT environment variable to match your app's port",
+        "Use Azure Container Registry (ACR) for production deployments",
+        "Enable docker container logging for debugging",
+        "Use unique web app names with timestamps to avoid conflicts",
+        "Set NODE_ENV=production in app settings"
+      ]
+    },
+    {
+      "category": "Next.js",
+      "practices": [
+        "Use ${PORT:-3000} syntax for fallback port values",
+        "Ensure 'next' binary is in PATH or use npm scripts",
+        "Build optimization works better in Docker than local builds"
+      ]
+    }
+  ],
+  "deployment_checklist": [
+    "✓ Dockerfile uses --platform=linux/amd64",
+    "✓ ENV PORT is set with default value",
+    "✓ PATH includes /app/node_modules/.bin",
+    "✓ CMD uses shell form for variable expansion",
+    "✓ Build command uses docker buildx with --platform flag",
+    "✓ WEBSITES_PORT=3000 set in Azure app settings",
+    "✓ Docker container logging enabled",
+    "✓ ACR credentials configured in web app",
+    "✓ Web app restarted after image push"
+  ],
+  "working_configuration": {
+    "dockerfile": "Dockerfile.simple",
+    "base_image": "node:18-alpine with --platform=linux/amd64",
+    "build_command": "docker buildx build --platform linux/amd64 -f Dockerfile.simple -t imagegenacr.azurecr.io/frontend:latest . --load",
+    "push_command": "docker push imagegenacr.azurecr.io/frontend:latest",
+    "restart_command": "az webapp restart --name <webapp-name> --resource-group imagegen-rg",
+    "azure_settings": {
+      "WEBSITES_PORT": "3000",
+      "NODE_ENV": "production"
+    }
+  },
+  "resource_names": {
+    "resource_group": "imagegen-rg",
+    "acr_name": "imagegenacr",
+    "app_service_plan": "imagegen-plan",
+    "web_app_name": "frontend-{timestamp} (e.g., frontend-1759505039)",
+    "image_name": "frontend"
+  },
+  "useful_commands": {
+    "view_logs": "az webapp log tail --name <webapp-name> --resource-group imagegen-rg",
+    "restart_app": "az webapp restart --name <webapp-name> --resource-group imagegen-rg",
+    "list_webapps": "az webapp list --resource-group imagegen-rg --query '[].name' -o tsv",
+    "rebuild_and_deploy": "./deploy-azure.sh",
+    "check_container_status": "az webapp show --name <webapp-name> --resource-group imagegen-rg --query state"
+  },
+  "notes": [
+    "Always rebuild Docker image after code changes",
+    "Azure Web App can take 30-60 seconds to start after restart",
+    "Use 'az webapp log tail' for real-time debugging",
+    "ACR login expires after some time, re-login if push fails",
+    "Web app names must be globally unique in Azure"
+  ]
+}

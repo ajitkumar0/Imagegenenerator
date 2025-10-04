@@ -1,0 +1,29 @@
+# Use Node.js 18 Alpine base image for linux/amd64 platform
+FROM --platform=linux/amd64 node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json ./
+
+# Install dependencies
+RUN npm install --legacy-peer-deps
+
+# Copy all project files
+COPY . .
+
+# Build the Next.js app
+RUN npm run build
+
+# Expose port 3000
+EXPOSE 3000
+
+# Set default PORT if not provided
+ENV PORT=3000
+
+# Set PATH to include node_modules binaries
+ENV PATH=/app/node_modules/.bin:$PATH
+
+# Start the production server using sh to properly expand environment variables
+CMD ["sh", "-c", "next start -p ${PORT}"]

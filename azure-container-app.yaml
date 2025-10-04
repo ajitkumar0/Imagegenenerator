@@ -1,0 +1,209 @@
+# Azure Container App deployment configuration
+# Use this with: az containerapp create --yaml azure-container-app.yaml
+
+properties:
+  managedEnvironmentId: /subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.App/managedEnvironments/{environment-name}
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 8000
+      transport: auto
+      allowInsecure: false
+      traffic:
+        - weight: 100
+          latestRevision: true
+      corsPolicy:
+        allowedOrigins:
+          - "https://yourdomain.com"
+          - "http://localhost:3000"
+        allowedMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowedHeaders:
+          - "*"
+        exposeHeaders:
+          - "*"
+        maxAge: 3600
+        allowCredentials: true
+    secrets: []
+    registries:
+      - server: {your-acr-name}.azurecr.io
+        identity: system
+  template:
+    containers:
+      - image: {your-acr-name}.azurecr.io/imagegenerator-api:latest
+        name: imagegenerator-api
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          # Application Settings
+          - name: ENVIRONMENT
+            value: production
+          - name: DEBUG
+            value: "false"
+          - name: LOG_LEVEL
+            value: INFO
+
+          # Azure Cosmos DB
+          - name: AZURE_COSMOS_ENDPOINT
+            value: https://{your-cosmos-account}.documents.azure.com:443/
+          - name: COSMOS_DATABASE_NAME
+            value: imagegenerator
+          - name: COSMOS_CONTAINER_NAME
+            value: images
+
+          # Azure Storage
+          - name: AZURE_STORAGE_ACCOUNT_URL
+            value: https://{your-storage-account}.blob.core.windows.net/
+          - name: STORAGE_CONTAINER_NAME
+            value: images
+
+          # Azure Key Vault (Optional)
+          - name: AZURE_KEY_VAULT_URL
+            value: https://{your-keyvault}.vault.azure.net/
+
+          # Azure Service Bus (Optional)
+          - name: AZURE_SERVICEBUS_NAMESPACE
+            value: {your-servicebus-namespace}
+          - name: SERVICEBUS_QUEUE_NAME
+            value: image-processing
+
+          # Azure Content Safety (Optional)
+          - name: AZURE_CONTENT_SAFETY_ENDPOINT
+            value: https://{your-content-safety}.cognitiveservices.azure.com/
+
+          # Application Insights
+          - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+            value: InstrumentationKey={your-instrumentation-key};IngestionEndpoint=https://{region}.applicationinsights.azure.com/
+
+          # CORS Settings
+          - name: CORS_ORIGINS
+            value: "https://yourdomain.com,http://localhost:3000"
+
+          # Managed Identity
+          - name: MANAGED_IDENTITY_ENABLED
+            value: "true"
+
+          # Security
+          - name: SECRET_KEY
+            secretRef: secret-key
+
+        probes:
+          - type: Liveness
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          - type: Readiness
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          - type: Startup
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 30
+
+    scale:
+      minReplicas: 0
+      maxReplicas: 10
+      rules:
+        - name: http-rule
+          http:
+            metadata:
+              concurrentRequests: "100"
+
+identity:
+  type: SystemAssigned
+
+---
+# CLI Commands for deployment
+
+# 1. Build and push Docker image to Azure Container Registry
+# az acr build --registry {your-acr-name} --image imagegenerator-api:latest -f Dockerfile.backend .
+
+# 2. Create Container App with Managed Identity
+# az containerapp create \
+#   --name imagegenerator-api \
+#   --resource-group {resource-group} \
+#   --environment {environment-name} \
+#   --image {your-acr-name}.azurecr.io/imagegenerator-api:latest \
+#   --target-port 8000 \
+#   --ingress external \
+#   --min-replicas 0 \
+#   --max-replicas 10 \
+#   --cpu 0.5 \
+#   --memory 1.0Gi \
+#   --registry-server {your-acr-name}.azurecr.io \
+#   --registry-identity system \
+#   --system-assigned
+
+# 3. Get the Container App's Managed Identity Principal ID
+# PRINCIPAL_ID=$(az containerapp show \
+#   --name imagegenerator-api \
+#   --resource-group {resource-group} \
+#   --query identity.principalId \
+#   --output tsv)
+
+# 4. Assign roles to the Managed Identity
+
+# Cosmos DB - Cosmos DB Built-in Data Contributor
+# az cosmosdb sql role assignment create \
+#   --account-name {your-cosmos-account} \
+#   --resource-group {resource-group} \
+#   --scope "/" \
+#   --principal-id $PRINCIPAL_ID \
+#   --role-definition-id 00000000-0000-0000-0000-000000000002
+
+# Blob Storage - Storage Blob Data Contributor
+# az role assignment create \
+#   --assignee $PRINCIPAL_ID \
+#   --role "Storage Blob Data Contributor" \
+#   --scope /subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.Storage/storageAccounts/{storage-account}
+
+# Key Vault - Key Vault Secrets User
+# az role assignment create \
+#   --assignee $PRINCIPAL_ID \
+#   --role "Key Vault Secrets User" \
+#   --scope /subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.KeyVault/vaults/{keyvault-name}
+
+# Service Bus - Azure Service Bus Data Owner
+# az role assignment create \
+#   --assignee $PRINCIPAL_ID \
+#   --role "Azure Service Bus Data Owner" \
+#   --scope /subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.ServiceBus/namespaces/{servicebus-namespace}
+
+# 5. Update Container App with environment variables
+# az containerapp update \
+#   --name imagegenerator-api \
+#   --resource-group {resource-group} \
+#   --set-env-vars \
+#     AZURE_COSMOS_ENDPOINT=https://{your-cosmos-account}.documents.azure.com:443/ \
+#     AZURE_STORAGE_ACCOUNT_URL=https://{your-storage-account}.blob.core.windows.net/ \
+#     APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=..." \
+#     ENVIRONMENT=production \
+#     DEBUG=false
+
+# 6. View logs
+# az containerapp logs show \
+#   --name imagegenerator-api \
+#   --resource-group {resource-group} \
+#   --follow
