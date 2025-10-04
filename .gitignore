@@ -27,6 +27,14 @@ yarn-error.log*
 
 # local env files
 .env*.local
+.env
+
+# deployment configuration (contains secrets)
+infrastructure/deploy-gcp-config.env
+infrastructure/deploy-config.env
+infrastructure/*-outputs.txt
+infrastructure/gcp-deployment-outputs.txt
+infrastructure/deployment-outputs.txt
 
 # vercel
 .vercel
